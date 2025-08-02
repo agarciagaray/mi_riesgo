@@ -1,0 +1,6 @@
+{
+  "name": "Plataforma de Gestión de Cartera y Riesgo Crediticio",
+  "description": "Una aplicación web para que las empresas afiliadas reporten carteras de crédito y consulten el historial crediticio y el puntaje de riesgo de personas o entidades para evaluar el otorgamiento de nuevos créditos.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

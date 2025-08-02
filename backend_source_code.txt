@@ -1,0 +1,1104 @@
+
+--- START OF FILE backend/main.py ---
+import os
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from backend.routers import auth, reports, clients, dashboard, gemini, files, companies
+from sqlalchemy.exc import SQLAlchemyError
+
+# Crea la carpeta de uploads si no existe
+if not os.path.exists('uploads'):
+    os.makedirs('uploads')
+
+app = FastAPI(
+    title="Credit Intelligence Platform API",
+    description="API para gestionar el riesgo crediticio y la cartera de clientes.",
+    version="1.0.0",
+)
+
+# Configuración de CORS
+# Esto permite que el frontend (ejecutándose en un origen diferente) se comunique con el backend.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # En producción, deberías restringir esto a la URL de tu frontend.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Middleware para manejar errores de base de datos de forma global
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+    print(f"SQLAlchemy Error: {exc}") # Log para debugging
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Ocurrió un error en la base de datos. Por favor, intente de nuevo más tarde."},
+    )
+
+# Incluir los routers de la aplicación
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(clients.router, prefix="/api/clients", tags=["Clients"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(gemini.router, prefix="/api", tags=["AI Risk Analysis"])
+app.include_router(files.router, prefix="/api/files", tags=["File Processing"])
+app.include_router(companies.router, prefix="/api/companies", tags=["Companies"])
+
+
+@app.get("/api/health", tags=["Health Check"])
+async def health_check():
+    """Endpoint para verificar que el servidor está funcionando."""
+    return {"status": "ok"}
+--- END OF FILE backend/main.py ---
+
+
+--- START OF FILE backend/config.py ---
+import os
+from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+# Carga las variables de entorno desde un archivo .env
+# Esto es útil para el desarrollo local.
+load_dotenv()
+
+class Settings(BaseSettings):
+    """
+    Configuraciones de la aplicación cargadas desde variables de entorno.
+    Utiliza Pydantic para la validación de tipos.
+    """
+    # Configuración de la Base de Datos
+    DB_HOST: str
+    DB_PORT: int = 3306
+    DB_USER: str
+    DB_PASSWORD: str
+    DB_NAME: str
+
+    # Configuración de JWT para autenticación
+    SECRET_KEY: str = "un-secreto-muy-seguro-deberia-ser-mas-largo-y-aleatorio"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 horas
+
+    # API Key de Google Gemini
+    # Esta es la forma correcta de acceder a la variable de entorno
+    # que será seteada en el sistema de producción.
+    API_KEY: str
+
+    class Config:
+        # pydantic-settings buscará las variables en un archivo .env si está presente.
+        env_file = ".env"
+        env_file_encoding = 'utf-8'
+
+# Instancia única de la configuración para ser usada en toda la aplicación
+settings = Settings()
+--- END OF FILE backend/config.py ---
+
+
+--- START OF FILE backend/database.py ---
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from .config import settings
+
+# Construye la URL de conexión a la base de datos a partir de la configuración
+DATABASE_URL = (
+    f"mysql+mysqlclient://{settings.DB_USER}:{settings.DB_PASSWORD}@"
+    f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+)
+
+# Crea el motor de SQLAlchemy
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+# Crea una clase de sesión local
+# Cada instancia de SessionLocal será una sesión de base de datos.
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Base para los modelos ORM de SQLAlchemy
+Base = declarative_base()
+
+# Función de dependencia para obtener una sesión de base de datos
+# Esta función se usará en los endpoints de la API para interactuar con la DB.
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+--- END OF FILE backend/database.py ---
+
+
+--- START OF FILE backend/models.py ---
+from sqlalchemy import (
+    Boolean, Column, ForeignKey, Integer, String, Date, DECIMAL, 
+    TIMESTAMP, ENUM, Text
+)
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql import func
+
+Base = declarative_base()
+
+class Company(Base):
+    __tablename__ = "companies"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, unique=True)
+    name = Column(String(255), nullable=False)
+    nit = Column(String(20), nullable=False, unique=True)
+    transunion_code = Column(String(10), nullable=False, unique=True)
+    address = Column(String(255))
+    phone = Column(String(20))
+    email = Column(String(255))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+    
+    users = relationship("User", back_populates="company")
+    loans = relationship("Loan", back_populates="company")
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, unique=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    full_name = Column(String(255), nullable=False)
+    national_identifier = Column(String(20), nullable=False, unique=True)
+    phone = Column(String(20), nullable=False)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(ENUM("analyst", "manager", "admin"), nullable=False, default="analyst")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    company = relationship("Company", back_populates="users")
+
+class Client(Base):
+    __tablename__ = "clients"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, unique=True)
+    national_identifier = Column(String(20), nullable=False, unique=True, index=True)
+    full_name = Column(String(255), nullable=False)
+    birth_date = Column(Date)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    data_history = relationship("ClientDataHistory", back_populates="client", cascade="all, delete-orphan")
+    flags = relationship("ClientFlag", back_populates="client", cascade="all, delete-orphan")
+    loans = relationship("Loan", back_populates="client")
+
+class ClientDataHistory(Base):
+    __tablename__ = "client_data_history"
+    id = Column(Integer, primary_key=True, autoincrement=True, unique=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    data_type = Column(ENUM("address", "phone", "email"), nullable=False)
+    value = Column(String(255), nullable=False)
+    date_modified = Column(TIMESTAMP, server_default=func.now())
+    
+    client = relationship("Client", back_populates="data_history")
+
+class ClientFlag(Base):
+    __tablename__ = "client_flags"
+    id = Column(Integer, primary_key=True, autoincrement=True, unique=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    flag = Column(String(50), nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    
+    client = relationship("Client", back_populates="flags")
+
+class Loan(Base):
+    __tablename__ = "loans"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, unique=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    origination_date = Column(Date, nullable=False)
+    original_amount = Column(DECIMAL(15, 2), nullable=False)
+    current_balance = Column(DECIMAL(15, 2), nullable=False)
+    status = Column(ENUM('Vigente', 'En Mora', 'Pagado', 'Cancelado', 'Castigado', 'En Jurídica', 'Embargo', 'Fraudulento', 'Siniestrado'), nullable=False)
+    modality = Column(ENUM('Diario', 'Semanal', 'Quincenal', 'Mensual', 'Anual'), nullable=False)
+    interest_rate = Column(DECIMAL(5, 2), nullable=False)
+    installments = Column(Integer, nullable=False)
+    last_report_date = Column(Date, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    client = relationship("Client", back_populates="loans")
+    company = relationship("Company", back_populates="loans")
+    payments = relationship("Payment", back_populates="loan", cascade="all, delete-orphan")
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id = Column(Integer, primary_key=True, autoincrement=True, unique=True)
+    loan_id = Column(Integer, ForeignKey("loans.id"), nullable=False)
+    installment_number = Column(Integer, nullable=False)
+    expected_payment_date = Column(Date, nullable=False)
+    actual_payment_date = Column(Date)
+    amount_paid = Column(DECIMAL(15, 2))
+    status = Column(ENUM('Pendiente', 'Pagado', 'En Mora'), nullable=False)
+    days_late = Column(Integer, default=0)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+    
+    loan = relationship("Loan", back_populates="payments")
+--- END OF FILE backend/models.py ---
+
+
+--- START OF FILE backend/schemas.py ---
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Optional, Any
+from datetime import date, datetime
+
+# --- Base Schemas ---
+# Schemas para datos que se reciben o envían a través de la API.
+# Proporcionan validación y serialización automática.
+
+# -- User & Auth Schemas --
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: str
+    national_identifier: str
+    phone: str
+
+class UserCreate(UserBase):
+    password: str
+    role: str = 'analyst'
+    company_id: Optional[int] = None
+
+class UserSchema(UserBase):
+    id: int
+    company_id: Optional[int] = None
+    role: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserSchema
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+# -- Company Schemas --
+class CompanyBase(BaseModel):
+    name: str
+    nit: str
+    transunion_code: str
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+class CompanyCreate(CompanyBase):
+    pass
+
+class CompanySchema(CompanyBase):
+    id: int
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+# -- Client & Credit Report Schemas --
+class HistoricEntry(BaseModel):
+    value: str
+    dateModified: datetime
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat(),
+        }
+
+class ClientUpdateData(BaseModel):
+    fullName: str
+    address: str
+    phone: str
+    email: str
+    flags: List[str]
+
+
+class ClientSchema(BaseModel):
+    id: int
+    nationalIdentifier: str
+    fullName: str
+    birthDate: date
+    addresses: List[HistoricEntry]
+    phones: List[HistoricEntry]
+    emails: List[HistoricEntry]
+    flags: Optional[List[str]] = []
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+
+class PaymentSchema(BaseModel):
+    id: int
+    loan_id: int
+    installment_number: int
+    expected_payment_date: date
+    actual_payment_date: Optional[date]
+    amount_paid: Optional[float]
+    status: str
+    days_late: int
+
+    class Config:
+        from_attributes = True
+
+
+class LoanSchema(BaseModel):
+    id: int
+    client_id: int
+    origination_date: date
+    original_amount: float
+    modality: str
+    interest_rate: float
+    installments: int
+    current_balance: float
+    status: str
+    last_report_date: date
+    payments: List[PaymentSchema]
+
+    class Config:
+        from_attributes = True
+
+class DebtSummary(BaseModel):
+    totalCredits: int
+    activeCredits: int
+    paidCredits: int
+    totalOriginalAmount: float
+    totalCurrentBalance: float
+
+    class Config:
+        populate_by_name = True
+
+class CreditReportSchema(BaseModel):
+    client: ClientSchema
+    loans: List[LoanSchema]
+    debtSummary: DebtSummary
+
+    class Config:
+        populate_by_name = True
+
+# -- Gemini & Risk Score Schemas --
+class RiskScoreRequest(BaseModel):
+    report: Any # Se deja Any por flexibilidad con el formato que envía el frontend
+
+class RiskScore(BaseModel):
+    score: int
+    assessment: str
+    reasoning: str
+
+# -- Dashboard Schemas --
+class GeneralDashboardData(BaseModel):
+    total_clients: int
+    active_clients_up_to_date: int
+    clients_with_arrears: int
+    clients_in_legal: int
+    mora_distribution: dict
+
+class CompanyAnalyticsData(BaseModel):
+    company: CompanySchema
+    total_clients: int
+    active_clients_up_to_date: int
+    clients_with_arrears: int
+    clients_in_legal: int
+    mora_distribution: dict
+
+class DashboardResponse(BaseModel):
+    general: GeneralDashboardData
+    company: List[CompanyAnalyticsData]
+
+# -- File Upload Schemas --
+class ProcessResult(BaseModel):
+    status: str # 'success' or 'error'
+    message: str
+    file_name: str
+    total_records: int
+    processed_records: int
+    new_clients: int
+    new_loans: int
+    updated_loans: int
+    errors: List[str]
+--- END OF FILE backend/schemas.py ---
+
+
+--- START OF FILE backend/crud.py ---
+from sqlalchemy.orm import Session, joinedload, subqueryload
+from sqlalchemy import func
+from . import models, schemas
+from .auth import get_password_hash
+from datetime import datetime
+
+# --- User CRUD ---
+def get_user_by_email(db: Session, email: str):
+    return db.query(models.User).filter(models.User.email == email).first()
+
+def create_user(db: Session, user: schemas.UserCreate):
+    hashed_password = get_password_hash(user.password)
+    db_user = models.User(
+        email=user.email,
+        password_hash=hashed_password,
+        full_name=user.full_name,
+        national_identifier=user.national_identifier,
+        phone=user.phone,
+        role=user.role,
+        company_id=user.company_id
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+# --- Company CRUD ---
+def get_all_companies(db: Session):
+    return db.query(models.Company).filter(models.Company.is_active == True).all()
+
+# --- Client CRUD ---
+def get_client_by_identifier(db: Session, identifier: str):
+    return db.query(models.Client).filter(models.Client.national_identifier == identifier).first()
+
+def get_all_clients(db: Session):
+    return (
+        db.query(models.Client)
+        .options(
+            subqueryload(models.Client.data_history),
+            subqueryload(models.Client.flags)
+        )
+        .order_by(models.Client.full_name)
+        .all()
+    )
+
+def update_client(db: Session, client_id: int, update_data: schemas.ClientUpdateData):
+    db_client = db.query(models.Client).filter(models.Client.id == client_id).first()
+    if not db_client:
+        return None
+
+    now = datetime.utcnow()
+
+    # Update simple fields
+    db_client.full_name = update_data.fullName
+    
+    # Obtener el dato más reciente de cada tipo para comparar
+    latest_address = db.query(models.ClientDataHistory).filter_by(client_id=client_id, data_type='address').order_by(models.ClientDataHistory.date_modified.desc()).first()
+    latest_phone = db.query(models.ClientDataHistory).filter_by(client_id=client_id, data_type='phone').order_by(models.ClientDataHistory.date_modified.desc()).first()
+    latest_email = db.query(models.ClientDataHistory).filter_by(client_id=client_id, data_type='email').order_by(models.ClientDataHistory.date_modified.desc()).first()
+
+    # Update historical data if changed
+    if not latest_address or latest_address.value != update_data.address:
+        new_address = models.ClientDataHistory(client_id=client_id, data_type='address', value=update_data.address, date_modified=now)
+        db.add(new_address)
+    
+    if not latest_phone or latest_phone.value != update_data.phone:
+        new_phone = models.ClientDataHistory(client_id=client_id, data_type='phone', value=update_data.phone, date_modified=now)
+        db.add(new_phone)
+        
+    if not latest_email or latest_email.value != update_data.email:
+        new_email = models.ClientDataHistory(client_id=client_id, data_type='email', value=update_data.email, date_modified=now)
+        db.add(new_email)
+
+    # Update flags
+    current_flags = {f.flag for f in db_client.flags}
+    flags_to_remove = current_flags - set(update_data.flags)
+    for flag_val in flags_to_remove:
+        db.query(models.ClientFlag).filter_by(client_id=client_id, flag=flag_val).delete()
+
+    flags_to_add = set(update_data.flags) - current_flags
+    for flag_val in flags_to_add:
+        new_flag = models.ClientFlag(client_id=client_id, flag=flag_val)
+        db.add(new_flag)
+        
+    db.commit()
+    db.refresh(db_client)
+    return db_client
+
+
+# --- Loan CRUD ---
+def update_loan(db: Session, loan_id: int, loan_update: dict):
+    db_loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
+    if not db_loan:
+        return None
+    
+    # Update only the fields provided in the dictionary
+    for key, value in loan_update.items():
+        if hasattr(db_loan, key):
+            setattr(db_loan, key, value)
+            
+    db_loan.last_report_date = datetime.utcnow().date()
+    
+    db.commit()
+    db.refresh(db_loan)
+    return db_loan
+
+
+# --- Credit Report Logic ---
+def get_full_credit_report(db: Session, identifier: str):
+    client = (
+        db.query(models.Client)
+        .options(
+            joinedload(models.Client.data_history),
+            joinedload(models.Client.flags),
+            joinedload(models.Client.loans).subqueryload(models.Loan.payments)
+        )
+        .filter(models.Client.national_identifier == identifier)
+        .first()
+    )
+
+    if not client:
+        return None
+
+    addresses = sorted([h for h in client.data_history if h.data_type == 'address'], key=lambda x: x.date_modified, reverse=True)
+    phones = sorted([h for h in client.data_history if h.data_type == 'phone'], key=lambda x: x.date_modified, reverse=True)
+    emails = sorted([h for h in client.data_history if h.data_type == 'email'], key=lambda x: x.date_modified, reverse=True)
+    
+    # Calculate debt summary
+    total_credits = len(client.loans)
+    active_credits = sum(1 for loan in client.loans if loan.status not in ['Pagado', 'Cancelado'])
+    paid_credits = total_credits - active_credits
+    total_original_amount = sum(loan.original_amount for loan in client.loans)
+    total_current_balance = sum(loan.current_balance for loan in client.loans)
+
+    debt_summary = schemas.DebtSummary(
+        totalCredits=total_credits,
+        activeCredits=active_credits,
+        paidCredits=paid_credits,
+        totalOriginalAmount=float(total_original_amount),
+        totalCurrentBalance=float(total_current_balance)
+    )
+
+    client_schema = schemas.ClientSchema(
+        id=client.id,
+        nationalIdentifier=client.national_identifier,
+        fullName=client.full_name,
+        birthDate=client.birth_date,
+        addresses=[schemas.HistoricEntry.from_orm(a) for a in addresses],
+        phones=[schemas.HistoricEntry.from_orm(p) for p in phones],
+        emails=[schemas.HistoricEntry.from_orm(e) for e in emails],
+        flags=[f.flag for f in client.flags]
+    )
+
+    report = schemas.CreditReportSchema(
+        client=client_schema,
+        loans=[schemas.LoanSchema.from_orm(loan) for loan in client.loans],
+        debtSummary=debt_summary
+    )
+    
+    return report
+--- END OF FILE backend/crud.py ---
+
+
+--- START OF FILE backend/auth.py ---
+from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+
+from . import crud, models, schemas
+from .config import settings
+from .database import get_db
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth2 scheme for token-based authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifica si una contraseña plana coincide con su hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    """Genera el hash de una contraseña."""
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Crea un token de acceso JWT."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
+    """
+    Dependencia de FastAPI para obtener el usuario actual a partir del token JWT.
+    Valida el token y recupera al usuario de la base de datos.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = schemas.TokenData(email=email)
+    except JWTError:
+        raise credentials_exception
+    
+    user = crud.get_user_by_email(db, email=token_data.email)
+    if user is None:
+        raise credentials_exception
+    return user
+
+async def get_current_active_user(current_user: models.User = Depends(get_current_user)) -> models.User:
+    """
+    Dependencia que verifica si el usuario obtenido de `get_current_user` está activo.
+    """
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+--- END OF FILE backend/auth.py ---
+
+
+--- START OF FILE backend/routers/auth.py ---
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from datetime import timedelta
+
+from .. import crud, schemas, auth
+from ..database import get_db
+
+router = APIRouter()
+
+@router.post("/login", response_model=schemas.Token)
+def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    Endpoint para iniciar sesión.
+    Usa OAuth2PasswordRequestForm que espera un 'username' y 'password'.
+    Aquí, el 'username' será el email del usuario.
+    """
+    user = crud.get_user_by_email(db, email=form_data.username)
+    if not user or not auth.verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Correo o contraseña incorrectos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=auth.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth.create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    
+    user_schema = schemas.UserSchema.from_orm(user)
+    
+    return {"access_token": access_token, "token_type": "bearer", "user": user_schema}
+
+@router.post("/register", response_model=schemas.Token)
+def register_user(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+    """
+    Endpoint para registrar un nuevo usuario.
+    """
+    db_user = crud.get_user_by_email(db, email=user_data.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="El correo electrónico ya está registrado")
+    
+    # Crear el usuario en la base de datos
+    new_user = crud.create_user(db, user=user_data)
+    
+    # Generar token para el nuevo usuario
+    access_token_expires = timedelta(minutes=auth.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth.create_access_token(
+        data={"sub": new_user.email}, expires_delta=access_token_expires
+    )
+    
+    user_schema = schemas.UserSchema.from_orm(new_user)
+    
+    return {"access_token": access_token, "token_type": "bearer", "user": user_schema}
+--- END OF FILE backend/routers/auth.py ---
+
+
+--- START OF FILE backend/routers/reports.py ---
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from .. import crud, schemas, auth, models
+from ..database import get_db
+
+router = APIRouter()
+
+@router.get("/{identifier}", response_model=schemas.CreditReportSchema)
+def get_credit_report(
+    identifier: str, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Obtiene el reporte de crédito completo para un cliente por su identificador nacional.
+    Este es un endpoint protegido que requiere autenticación.
+    """
+    report = crud.get_full_credit_report(db, identifier=identifier)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado para el identificador proporcionado.")
+    
+    return report
+
+@router.put("/loans/{loan_id}", response_model=schemas.LoanSchema)
+def update_loan_details(
+    loan_id: int,
+    loan_update: schemas.LoanSchema, # Usar un schema flexible o un dict
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Actualiza los detalles de un préstamo.
+    """
+    # Convertir el schema Pydantic a un diccionario, excluyendo campos no establecidos
+    update_data = loan_update.dict(exclude_unset=True)
+    
+    updated_loan = crud.update_loan(db, loan_id=loan_id, loan_update=update_data)
+    if not updated_loan:
+        raise HTTPException(status_code=404, detail="Préstamo no encontrado")
+        
+    return schemas.LoanSchema.from_orm(updated_loan)
+--- END OF FILE backend/routers/reports.py ---
+
+
+--- START OF FILE backend/routers/clients.py ---
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+
+from .. import crud, schemas, auth, models
+from ..database import get_db
+
+router = APIRouter()
+
+@router.get("/", response_model=List[schemas.ClientSchema])
+def read_all_clients(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Endpoint para obtener una lista de todos los clientes.
+    Requiere autenticación.
+    """
+    clients_db = crud.get_all_clients(db)
+    
+    # Convertir cada cliente de la DB al esquema Pydantic
+    clients_schema = []
+    for client in clients_db:
+        addresses = sorted([h for h in client.data_history if h.data_type == 'address'], key=lambda x: x.date_modified, reverse=True)
+        phones = sorted([h for h in client.data_history if h.data_type == 'phone'], key=lambda x: x.date_modified, reverse=True)
+        emails = sorted([h for h in client.data_history if h.data_type == 'email'], key=lambda x: x.date_modified, reverse=True)
+        
+        clients_schema.append(schemas.ClientSchema(
+            id=client.id,
+            nationalIdentifier=client.national_identifier,
+            fullName=client.full_name,
+            birthDate=client.birth_date,
+            addresses=[schemas.HistoricEntry.from_orm(a) for a in addresses] if addresses else [],
+            phones=[schemas.HistoricEntry.from_orm(p) for p in phones] if phones else [],
+            emails=[schemas.HistoricEntry.from_orm(e) for e in emails] if emails else [],
+            flags=[f.flag for f in client.flags]
+        ))
+    
+    return clients_schema
+
+
+@router.put("/{client_id}", response_model=schemas.ClientSchema)
+def update_client_info(
+    client_id: int,
+    update_data: schemas.ClientUpdateData,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Actualiza la información de un cliente.
+    Requiere autenticación.
+    """
+    updated_client_db = crud.update_client(db=db, client_id=client_id, update_data=update_data)
+    
+    if not updated_client_db:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        
+    # Recargar el cliente con sus relaciones para asegurar que la respuesta esté completa
+    db.refresh(updated_client_db)
+    
+    addresses = sorted([h for h in updated_client_db.data_history if h.data_type == 'address'], key=lambda x: x.date_modified, reverse=True)
+    phones = sorted([h for h in updated_client_db.data_history if h.data_type == 'phone'], key=lambda x: x.date_modified, reverse=True)
+    emails = sorted([h for h in updated_client_db.data_history if h.data_type == 'email'], key=lambda x: x.date_modified, reverse=True)
+
+    return schemas.ClientSchema(
+        id=updated_client_db.id,
+        nationalIdentifier=updated_client_db.national_identifier,
+        fullName=updated_client_db.full_name,
+        birthDate=updated_client_db.birth_date,
+        addresses=[schemas.HistoricEntry.from_orm(a) for a in addresses],
+        phones=[schemas.HistoricEntry.from_orm(p) for p in phones],
+        emails=[schemas.HistoricEntry.from_orm(e) for e in emails],
+        flags=[f.flag for f in updated_client_db.flags]
+    )
+--- END OF FILE backend/routers/clients.py ---
+
+
+--- START OF FILE backend/routers/dashboard.py ---
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from .. import schemas, auth, models, crud
+from ..database import get_db
+
+router = APIRouter()
+
+@router.get("", response_model=schemas.DashboardResponse)
+def get_dashboard_data(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Endpoint para obtener los datos consolidados del dashboard.
+    NOTA: Esta es una implementación SIMULADA. En un entorno real,
+    estas consultas serían complejas y estarían optimizadas.
+    """
+
+    # --- Simulación de datos generales ---
+    total_clients = db.query(models.Client).count()
+    clients_with_arrears = db.query(models.Loan.client_id).filter(models.Loan.status.in_(['En Mora', 'Castigado'])).distinct().count()
+    clients_in_legal = db.query(models.Loan.client_id).filter(models.Loan.status.in_(['En Jurídica', 'Embargo'])).distinct().count()
+    active_clients_up_to_date = total_clients - clients_with_arrears - clients_in_legal
+
+    general_data = schemas.GeneralDashboardData(
+        total_clients=total_clients,
+        active_clients_up_to_date=active_clients_up_to_date,
+        clients_with_arrears=clients_with_arrears,
+        clients_in_legal=clients_in_legal,
+        mora_distribution={
+            "1-30": 120, "31-60": 75, "61-90": 40, "91+": 25
+        } # Datos simulados
+    )
+
+    # --- Simulación de datos por empresa ---
+    all_companies = crud.get_all_companies(db)
+    company_data = []
+    for company in all_companies:
+        company_clients = db.query(models.Loan.client_id).filter(models.Loan.company_id == company.id).distinct().count()
+        company_data.append(schemas.CompanyAnalyticsData(
+            company=schemas.CompanySchema.from_orm(company),
+            total_clients=company_clients,
+            active_clients_up_to_date=int(company_clients * 0.8), # Simulado
+            clients_with_arrears=int(company_clients * 0.15), # Simulado
+            clients_in_legal=int(company_clients * 0.05), # Simulado
+            mora_distribution={ "1-30": 30, "31-60": 15, "61-90": 8, "91+": 5 } # Simulado
+        ))
+
+    return schemas.DashboardResponse(general=general_data, company=company_data)
+--- END OF FILE backend/routers/dashboard.py ---
+
+
+--- START OF FILE backend/routers/gemini.py ---
+import os
+import json
+from fastapi import APIRouter, Depends, HTTPException
+from .. import schemas, auth, models
+from ..config import settings
+from google.generativeai import GenerativeModel, configure
+import google.generativeai as genai
+
+# Configura la API de Google
+try:
+    # El nombre del SDK ha cambiado en versiones recientes.
+    genai.configure(api_key=settings.API_KEY)
+except Exception as e:
+    print(f"Error al configurar la API de Google: {e}")
+    # Esto no detendrá la aplicación, pero las llamadas a Gemini fallarán.
+
+router = APIRouter()
+
+@router.post("/risk-score", response_model=schemas.RiskScore)
+async def calculate_risk_score(
+    request: schemas.RiskScoreRequest,
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Calcula el puntaje de riesgo de un cliente utilizando la API de Google Gemini.
+    """
+    if not settings.API_KEY or "TU_CLAVE_DE_API" in settings.API_KEY:
+        raise HTTPException(status_code=500, detail="La API Key de Google Gemini no está configurada en el servidor.")
+        
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo inicializar el modelo de IA: {e}")
+
+    report_data = request.report
+    
+    # Simplificar el reporte para no exceder el límite de tokens
+    simplified_report = {
+        "client": {
+            "birthDate": report_data.get("client", {}).get("birthDate"),
+            "flags": report_data.get("client", {}).get("flags"),
+        },
+        "debtSummary": report_data.get("debtSummary"),
+        "loans": [
+            {
+                "status": loan.get("status"),
+                "originalAmount": loan.get("originalAmount"),
+                "currentBalance": loan.get("currentBalance"),
+                "paymentsSummary": f"{len([p for p in loan.get('payments', []) if p['status'] == 'Pagado'])} pagadas de {len(loan.get('payments', []))}"
+            } for loan in report_data.get("loans", [])
+        ]
+    }
+    
+    prompt = f"""
+    Eres un experto analista de riesgo crediticio para una entidad financiera en Colombia.
+    Tu tarea es analizar el siguiente reporte de crédito y generar un puntaje de riesgo y una evaluación.
+    
+    El puntaje de riesgo debe estar en una escala de 300 a 850, donde:
+    - 300-579: Muy Malo (Riesgo Muy Alto)
+    - 580-669: Regular (Riesgo Alto)
+    - 670-739: Bueno (Riesgo Medio)
+    - 740-799: Muy Bueno (Riesgo Bajo)
+    - 800-850: Excepcional (Riesgo Muy Bajo)
+    
+    Considera los siguientes factores: historial de pago, nivel de endeudamiento actual vs. original, estado de los créditos (especialmente si hay 'Castigado', 'En Jurídica' o 'Fraude'), y la cantidad de créditos. Las banderas de 'Fraude' o 'Robo de identidad' deben impactar muy negativamente el puntaje.
+    
+    Analiza estos datos:
+    {json.dumps(simplified_report)}
+    
+    Devuelve tu respuesta ÚNICAMENTE en formato JSON, sin texto adicional antes o después del JSON.
+    El JSON debe tener la siguiente estructura exacta:
+    {{
+      "score": <un número entero entre 300 y 850>,
+      "assessment": "<Una de estas opciones: 'Muy Bajo', 'Bajo', 'Medio', 'Alto', 'Muy Alto'>",
+      "reasoning": "<Una frase corta y concisa (máximo 15 palabras) que justifique el puntaje, ej: 'Excelente historial de pagos y bajo endeudamiento.'>"
+    }}
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        
+        # Limpiar la respuesta para obtener solo el JSON
+        json_text = response.text.strip().replace('```json', '').replace('```', '')
+        
+        result = json.loads(json_text)
+        
+        return schemas.RiskScore(**result)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="La respuesta de la IA no fue un JSON válido.")
+    except Exception as e:
+        print(f"Error llamando a la API de Gemini: {e}")
+        raise HTTPException(status_code=503, detail=f"Error al comunicarse con el servicio de IA: {str(e)}")
+--- END OF FILE backend/routers/gemini.py ---
+
+
+--- START OF FILE backend/routers/files.py ---
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from .. import schemas, auth, models
+import os
+import shutil
+
+router = APIRouter()
+
+UPLOAD_DIRECTORY = "uploads"
+
+@router.post("/upload", response_model=schemas.ProcessResult)
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Endpoint para cargar un archivo plano.
+    NOTA: Esta es una implementación SIMULADA. No procesa el archivo,
+    simplemente lo guarda y devuelve un resultado exitoso.
+    """
+    if not file.filename.endswith(".txt"):
+        raise HTTPException(status_code=400, detail="Formato de archivo no válido. Solo se aceptan archivos .txt.")
+
+    file_path = os.path.join(UPLOAD_DIRECTORY, file.filename)
+
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        return schemas.ProcessResult(
+            status='error',
+            message=f"No se pudo guardar el archivo: {str(e)}",
+            fileName=file.filename,
+            totalRecords=0, processedRecords=0, newClients=0, newLoans=0, updatedLoans=0,
+            errors=[str(e)]
+        )
+    finally:
+        file.file.close()
+    
+    # Simulación de un procesamiento exitoso
+    return schemas.ProcessResult(
+        status='success',
+        message=f"Archivo '{file.filename}' recibido y guardado correctamente. El procesamiento en segundo plano ha comenzado.",
+        fileName=file.filename,
+        totalRecords=158,
+        processedRecords=158,
+        newClients=12,
+        newLoans=25,
+        updatedLoans=121,
+        errors=[]
+    )
+--- END OF FILE backend/routers/files.py ---
+
+
+--- START OF FILE backend/routers/companies.py ---
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from typing import List
+
+from .. import crud, schemas, auth, models
+from ..database import get_db
+
+router = APIRouter()
+
+@router.get("", response_model=List[schemas.CompanySchema])
+def get_all_active_companies(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Obtiene una lista de todas las empresas activas.
+    Útil para poblar selectores en el frontend.
+    """
+    companies = crud.get_all_companies(db)
+    return companies
+--- END OF FILE backend/routers/companies.py ---
+
+
+--- START OF FILE backend/.env.example ---
+# Configuración de la Base de Datos MySQL
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=igdadmin
+DB_PASSWORD="$User#Conec.2022$"
+DB_NAME=credit_intelligence_platform
+
+# Clave secreta para firmar los tokens JWT
+# Puedes generar una nueva con: openssl rand -hex 32
+SECRET_KEY=e4a2d8b1c3a6f9e8d7c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3
+
+# Clave de API de Google Gemini
+# Reemplaza "TU_CLAVE_DE_API_DE_GEMINI_AQUI" con tu clave real.
+API_KEY="TU_CLAVE_DE_API_DE_GEMINI_AQUI"
+--- END OF FILE backend/.env.example ---
+
+
+--- START OF FILE backend/requirements.txt ---
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+sqlalchemy==2.0.30
+pydantic==1.10.15
+pydantic-settings==2.2.1
+python-dotenv==1.0.1
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+google-generativeai==0.7.1
+mysqlclient==2.2.4
+python-multipart==0.0.9
+--- END OF FILE backend/requirements.txt ---

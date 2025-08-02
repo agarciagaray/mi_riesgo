@@ -1,0 +1,224 @@
+-- database.txt (Contenido para esquema MySQL)
+
+-- Base de datos para la Plataforma de Inteligencia Crediticia
+-- Versión 1.3
+-- Motor: MySQL
+
+-- -- BORRADO SEGURO (opcional, para desarrollo) --
+-- Descomentar la siguiente línea si deseas que la base de datos se borre y se vuelva a crear cada vez que se ejecute el script.
+-- DROP DATABASE IF EXISTS `credit_intelligence_platform`;
+
+-- -- CREACIÓN DE LA BASE DE DATOS --
+CREATE DATABASE IF NOT EXISTS `credit_intelligence_platform`
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_unicode_ci;
+
+USE `credit_intelligence_platform`;
+
+-- -- DEFINICIÓN DE TABLAS --
+
+-- Tabla: companies
+-- Almacena la información de las empresas afiliadas que reportan carteras.
+CREATE TABLE IF NOT EXISTS `companies` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(255) NOT NULL COMMENT 'Nombre comercial de la empresa',
+  `nit` VARCHAR(20) NOT NULL UNIQUE COMMENT 'NIT de la empresa, identificador único tributario',
+  `transunion_code` VARCHAR(10) NOT NULL UNIQUE COMMENT 'Código de entidad asignado para la carga de archivos',
+  `address` VARCHAR(255) DEFAULT NULL,
+  `phone` VARCHAR(20) DEFAULT NULL,
+  `email` VARCHAR(255) DEFAULT NULL,
+  `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB COMMENT='Empresas afiliadas al sistema de reporte crediticio';
+
+-- Tabla: users
+-- Almacena los usuarios que pueden acceder al sistema.
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `company_id` INT UNSIGNED NULL COMMENT 'Empresa a la que pertenece el usuario, si aplica',
+  `full_name` VARCHAR(255) NOT NULL,
+  `national_identifier` VARCHAR(20) NOT NULL UNIQUE,
+  `phone` VARCHAR(20) NOT NULL,
+  `email` VARCHAR(255) NOT NULL UNIQUE,
+  `password_hash` VARCHAR(255) NOT NULL,
+  `role` ENUM('analyst', 'manager', 'admin') NOT NULL DEFAULT 'analyst',
+  `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB COMMENT='Usuarios del sistema con diferentes roles y permisos';
+
+
+-- Tabla: clients
+-- Almacena la información de los clientes (deudores) reportados por las empresas.
+CREATE TABLE IF NOT EXISTS `clients` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `national_identifier` VARCHAR(20) NOT NULL UNIQUE COMMENT 'Cédula de ciudadanía, NIT, etc. Identificador único del cliente',
+  `full_name` VARCHAR(255) NOT NULL,
+  `birth_date` DATE DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB COMMENT='Clientes finales cuyo historial crediticio es reportado';
+
+-- Tabla para historicos de datos de cliente
+CREATE TABLE IF NOT EXISTS `client_data_history` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `client_id` INT UNSIGNED NOT NULL,
+    `data_type` ENUM('address', 'phone', 'email') NOT NULL,
+    `value` VARCHAR(255) NOT NULL,
+    `date_modified` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (`client_id`) REFERENCES `clients`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Historial de datos de contacto de clientes';
+
+
+-- Tabla: client_flags
+-- Almacena indicadores de riesgo asociados a un cliente.
+CREATE TABLE IF NOT EXISTS `client_flags` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `client_id` INT UNSIGNED NOT NULL,
+    `flag` VARCHAR(50) NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_client_flag` (`client_id`, `flag`),
+    FOREIGN KEY (`client_id`) REFERENCES `clients`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Indicadores de riesgo (banderas) para los clientes';
+
+
+-- Tabla: loans
+-- Almacena la información de cada crédito o obligación financiera.
+CREATE TABLE IF NOT EXISTS `loans` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `client_id` INT UNSIGNED NOT NULL,
+  `company_id` INT UNSIGNED NOT NULL COMMENT 'Empresa que originó el crédito',
+  `origination_date` DATE NOT NULL,
+  `original_amount` DECIMAL(15, 2) NOT NULL,
+  `current_balance` DECIMAL(15, 2) NOT NULL,
+  `status` ENUM('Vigente', 'En Mora', 'Pagado', 'Cancelado', 'Castigado', 'En Jurídica', 'Embargo', 'Fraudulento', 'Siniestrado') NOT NULL DEFAULT 'Vigente',
+  `modality` ENUM('Diario', 'Semanal', 'Quincenal', 'Mensual', 'Anual') NOT NULL,
+  `interest_rate` DECIMAL(5, 2) NOT NULL COMMENT 'Tasa de interés efectiva anual',
+  `installments` INT UNSIGNED NOT NULL,
+  `last_report_date` DATE NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`client_id`) REFERENCES `clients`(`id`) ON DELETE RESTRICT,
+  FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB COMMENT='Créditos y obligaciones financieras de los clientes';
+
+-- Tabla: payments
+-- Almacena el historial de pagos para cada cuota de un crédito.
+CREATE TABLE IF NOT EXISTS `payments` (
+  `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `loan_id` INT UNSIGNED NOT NULL,
+  `installment_number` INT UNSIGNED NOT NULL,
+  `expected_payment_date` DATE NOT NULL,
+  `actual_payment_date` DATE DEFAULT NULL,
+  `amount_paid` DECIMAL(15, 2) DEFAULT NULL,
+  `status` ENUM('Pendiente', 'Pagado', 'En Mora') NOT NULL DEFAULT 'Pendiente',
+  `days_late` INT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`loan_id`) REFERENCES `loans`(`id`) ON DELETE CASCADE,
+  UNIQUE KEY `uk_payment_loan_installment` (`loan_id`, `installment_number`)
+) ENGINE=InnoDB COMMENT='Historial detallado de pagos por cada cuota de un préstamo';
+
+
+-- -- INSERCIÓN DE DATOS DE EJEMPLO --
+
+-- Limpiar datos para evitar duplicados en re-ejecuciones
+SET FOREIGN_KEY_CHECKS=0;
+
+TRUNCATE TABLE `companies`;
+TRUNCATE TABLE `users`;
+TRUNCATE TABLE `clients`;
+TRUNCATE TABLE `client_data_history`;
+TRUNCATE TABLE `client_flags`;
+TRUNCATE TABLE `loans`;
+TRUNCATE TABLE `payments`;
+
+SET FOREIGN_KEY_CHECKS=1;
+
+
+-- EMPRESAS
+INSERT INTO `companies` (`id`, `name`, `nit`, `transunion_code`, `address`, `phone`, `email`, `is_active`) VALUES
+(10, 'Financiera Confianza S.A.', '800123456-1', '101', 'Calle Falsa 123', '3001112233', 'contacto@confianza.com', 1),
+(20, 'Créditos El Progreso Ltda.', '900654321-2', '202', 'Avenida Siempre Viva 742', '3109998877', 'info@progreso.com.co', 1),
+(30, 'Inversiones Futuro Seguro', '888777666-3', '303', 'Carrera 10 # 20-30', '3215556644', 'admin@futuroseguro.net', 1);
+
+-- USUARIOS (contraseñas son 'AdminPass123!' y 'AnalystPass123!')
+-- Contraseña para admin@credintell.com: AdminPass123! -> Hash: $2b$12$N9oYS4aH2gTDS6u2T9sC5.N3Lg3tEgT0r0T.l6A.u8q.q.t.z/x.c
+-- Contraseña para analyst@credintell.com: AnalystPass123! -> Hash: $2b$12$R9iS5oP1pS4oI9pE1nS4v.f3U9r.H7w.B5u.I8r.K7o.Y4u.B1e.q
+INSERT INTO `users` (`id`, `company_id`, `full_name`, `national_identifier`, `phone`, `email`, `password_hash`, `role`, `is_active`) VALUES
+(1, NULL, 'Administrador del Sistema', '1', '3000000000', 'admin@credintell.com', '$2b$12$N9oYS4aH2gTDS6u2T9sC5.N3Lg3tEgT0r0T.l6A.u8q.q.t.z/x.c', 'admin', 1),
+(2, 10, 'Analista de Crédito', '2', '3011111111', 'analyst@credintell.com', '$2b$12$R9iS5oP1pS4oI9pE1nS4v.f3U9r.H7w.B5u.I8r.K7o.Y4u.B1e.q', 'analyst', 1);
+
+-- CLIENTES
+INSERT INTO `clients` (`id`, `national_identifier`, `full_name`, `birth_date`) VALUES
+(100, '123456789', 'Juan Pérez', '1985-05-20'),
+(200, '987654321', 'María Rodríguez', '1990-11-15'),
+(300, '101010101', 'Carlos Gonzalez', '1995-02-10'),
+(400, '202020202', 'Ana Martínez', '1988-08-30');
+
+-- DATOS DE CONTACTO DE CLIENTES (HISTORIAL)
+-- Juan Pérez
+INSERT INTO `client_data_history` (`client_id`, `data_type`, `value`, `date_modified`) VALUES
+(100, 'address', 'Calle 100 # 20-30, Bogotá', '2023-01-10 10:00:00'),
+(100, 'phone', '3112223344', '2023-01-10 10:00:00'),
+(100, 'email', 'juan.perez.old@email.com', '2023-01-10 10:00:00'),
+(100, 'email', 'juan.perez@email.com', '2024-03-15 11:00:00');
+-- María Rodríguez
+INSERT INTO `client_data_history` (`client_id`, `data_type`, `value`, `date_modified`) VALUES
+(200, 'address', 'Carrera 5 # 15-25, Medellín', '2022-11-05 14:30:00'),
+(200, 'phone', '3156667788', '2022-11-05 14:30:00'),
+(200, 'email', 'maria.r@email.com', '2022-11-05 14:30:00');
+-- Carlos Gonzalez
+INSERT INTO `client_data_history` (`client_id`, `data_type`, `value`, `date_modified`) VALUES
+(300, 'address', 'Avenida 6 # 70-80, Cali', '2023-08-20 09:00:00'),
+(300, 'phone', '3189990011', '2023-08-20 09:00:00'),
+(300, 'email', 'cgonzalez@email.com', '2023-08-20 09:00:00');
+-- Ana Martínez
+INSERT INTO `client_data_history` (`client_id`, `data_type`, `value`, `date_modified`) VALUES
+(400, 'address', 'Diagonal 25 # 10-10, Cartagena', '2023-04-11 16:00:00'),
+(400, 'phone', '3148887766', '2023-04-11 16:00:00'),
+(400, 'email', 'ana.martinez@email.com', '2023-04-11 16:00:00');
+
+-- BANDERAS DE RIESGO
+INSERT INTO `client_flags` (`client_id`, `flag`) VALUES (200, 'Fraude');
+
+-- PRÉSTAMOS
+-- Juan Pérez (1 bueno, 1 con pequeña mora)
+INSERT INTO `loans` (`id`, `client_id`, `company_id`, `origination_date`, `original_amount`, `current_balance`, `status`, `modality`, `interest_rate`, `installments`, `last_report_date`) VALUES
+(1001, 100, 10, '2022-01-15', 5000000, 0, 'Pagado', 'Mensual', 22.5, 12, '2024-05-15'),
+(1002, 100, 20, '2023-11-01', 10000000, 7500000, 'En Mora', 'Mensual', 25.0, 24, '2024-05-15');
+-- María Rodríguez (1 castigado)
+INSERT INTO `loans` (`id`, `client_id`, `company_id`, `origination_date`, `original_amount`, `current_balance`, `status`, `modality`, `interest_rate`, `installments`, `last_report_date`) VALUES
+(2001, 200, 30, '2023-02-20', 20000000, 18000000, 'Castigado', 'Mensual', 28.0, 36, '2024-05-15');
+-- Carlos Gonzalez (1 vigente al día)
+INSERT INTO `loans` (`id`, `client_id`, `company_id`, `origination_date`, `original_amount`, `current_balance`, `status`, `modality`, `interest_rate`, `installments`, `last_report_date`) VALUES
+(3001, 300, 10, '2023-09-05', 8000000, 6000000, 'Vigente', 'Mensual', 21.0, 36, '2024-05-15');
+-- Ana Martínez (1 en jurídica)
+INSERT INTO `loans` (`id`, `client_id`, `company_id`, `origination_date`, `original_amount`, `current_balance`, `status`, `modality`, `interest_rate`, `installments`, `last_report_date`) VALUES
+(4001, 400, 20, '2023-05-10', 15000000, 14000000, 'En Jurídica', 'Mensual', 26.5, 48, '2024-05-15');
+
+-- PAGOS (Ejemplos simplificados)
+-- Préstamo 1001 (Pagado completo)
+INSERT INTO `payments` (`loan_id`, `installment_number`, `status`, `expected_payment_date`) VALUES
+(1001, 1, 'Pagado', '2022-02-15'), (1001, 2, 'Pagado', '2022-03-15'), (1001, 3, 'Pagado', '2022-04-15'),
+(1001, 4, 'Pagado', '2022-05-15'), (1001, 5, 'Pagado', '2022-06-15'), (1001, 6, 'Pagado', '2022-07-15'),
+(1001, 7, 'Pagado', '2022-08-15'), (1001, 8, 'Pagado', '2022-09-15'), (1001, 9, 'Pagado', '2022-10-15'),
+(1001, 10, 'Pagado', '2022-11-15'), (1001, 11, 'Pagado', '2022-12-15'), (1001, 12, 'Pagado', '2023-01-15');
+-- Préstamo 1002 (Algunos pagos, uno en mora)
+INSERT INTO `payments` (`loan_id`, `installment_number`, `status`, `days_late`, `expected_payment_date`) VALUES
+(1002, 1, 'Pagado', 0, '2023-12-01'), (1002, 2, 'Pagado', 0, '2024-01-01'), (1002, 3, 'Pagado', 5, '2024-02-01'),
+(1002, 4, 'Pagado', 0, '2024-03-01'), (1002, 5, 'En Mora', 15, '2024-04-01'), (1002, 6, 'Pendiente', 0, '2024-05-01');
+-- Préstamo 2001 (Pocos pagos, muchas moras)
+INSERT INTO `payments` (`loan_id`, `installment_number`, `status`, `days_late`, `expected_payment_date`) VALUES
+(2001, 1, 'Pagado', 0, '2023-03-20'), (2001, 2, 'En Mora', 200, '2023-04-20'), (2001, 3, 'En Mora', 170, '2023-05-20');
+-- Préstamo 3001 (Al día)
+INSERT INTO `payments` (`loan_id`, `installment_number`, `status`, `days_late`, `expected_payment_date`) VALUES
+(3001, 1, 'Pagado', 0, '2023-10-05'), (3001, 2, 'Pagado', 0, '2023-11-05'), (3001, 3, 'Pagado', 0, '2023-12-05'),
+(3001, 4, 'Pagado', 0, '2024-01-05'), (3001, 5, 'Pagado', 0, '2024-02-05'), (3001, 6, 'Pagado', 0, '2024-03-05'),
+(3001, 7, 'Pagado', 0, '2024-04-05'), (3001, 8, 'Pagado', 0, '2024-05-05'), (3001, 9, 'Pendiente', 0, '2024-06-05');
+-- Préstamo 4001 (En mora que llevó a jurídica)
+INSERT INTO `payments` (`loan_id`, `installment_number`, `status`, `days_late`, `expected_payment_date`) VALUES
+(4001, 1, 'Pagado', 0, '2023-06-10'), (4001, 2, 'Pagado', 10, '2023-07-10'), (4001, 3, 'Pagado', 25, '2023-08-10'),
+(4001, 4, 'En Mora', 150, '2023-09-10'), (4001, 5, 'En Mora', 120, '2023-10-10'), (4001, 6, 'En Mora', 90, '2023-11-10');
