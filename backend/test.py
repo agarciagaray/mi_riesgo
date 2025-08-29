@@ -9,7 +9,7 @@ def get_password_hash(password: str) -> str:
 # Cambia estos valores por los del usuario que deseas crear
 email = "nuevo@usuario.com"
 full_name = "Nuevo Usuario"
-national_identifier = "123456789"
+national_identifier = "123456780"
 phone = "555-1234"
 password = "AnalystPass123!"
 role = "analyst"  # o "manager", "admin"

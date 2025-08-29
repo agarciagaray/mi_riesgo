@@ -40,6 +40,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     Dependencia de FastAPI para obtener el usuario actual a partir del token JWT.
     Valida el token y recupera al usuario de la base de datos.
     """
+    print(f"🔐 DEBUG: Received token: {token[:50]}...")  # Log para debug
+    print(f"🔐 DEBUG: SECRET_KEY being used: {settings.SECRET_KEY[:20]}...")  # Log para debug
+    print(f"🔐 DEBUG: ALGORITHM: {settings.ALGORITHM}")  # Log para debug
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -48,15 +52,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get("sub")
+        print(f"🔐 DEBUG: Decoded email: {email}")  # Log para debug
+        print(f"🔐 DEBUG: Token payload: {payload}")  # Log para debug
         if email is None:
+            print(f"🔐 DEBUG: Email is None in token payload")  # Log para debug
             raise credentials_exception
         token_data = schemas.TokenData(email=email)
-    except JWTError:
+    except JWTError as e:
+        print(f"🔐 DEBUG: JWT Error: {e}")  # Log para debug
         raise credentials_exception
     
     user = crud.get_user_by_email(db, email=token_data.email)
     if user is None:
+        print(f"🔐 DEBUG: User not found: {token_data.email}")  # Log para debug
         raise credentials_exception
+    
+    print(f"🔐 DEBUG: User authenticated: {user.email}")  # Log para debug
     return user
 
 async def get_current_active_user(current_user: models.User = Depends(get_current_user)) -> models.User:

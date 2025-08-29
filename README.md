@@ -1,7 +1,7 @@
-# Plataforma de Inteligencia Crediticia con IA
+# Plataforma de Gestión de Historial Crediticio con IA
 
 
-![Plataforma de Inteligencia Crediticia](https://i.imgur.com/8a6E3kM.png)
+![Plataforma de Gestion de Historial Crediticio](https://i.imgur.com/8a6E3kM.png)
 
 
 **Miriresgo V2** es una plataforma avanzada de gestión de riesgo crediticio impulsada por inteligencia artificial, diseñada como una solución integral para instituciones financieras que requieren una evaluación precisa, ágil y automatizada del riesgo crediticio. Esta aplicación web de demostración simula un entorno realista de gestión de cartera crediticia, donde empresas afiliadas pueden registrar, monitorear y analizar el comportamiento de sus clientes, así como evaluar nuevos solicitantes de crédito mediante un **puntaje de riesgo dinámico generado por IA**.

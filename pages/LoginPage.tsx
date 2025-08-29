@@ -27,11 +27,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSwitchToRegister }) => {
         clearError();
         try {
             await login(email, password);
-            // Forzar recarga para garantizar que App detecte el login
-            window.location.reload();
+            // El contexto AuthContext se encargará de actualizar el estado de autenticación
+            // y App.tsx redireccionará automáticamente al MainLayout
+            console.log('🔓 Login exitoso, redirigiendo...');
         } catch (err) {
             // El error se muestra a través del hook useAuth
-            console.error(err);
+            console.error('🔓 Error en login:', err);
         } finally {
             setIsSubmitting(false);
         }

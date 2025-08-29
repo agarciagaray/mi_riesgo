@@ -75,8 +75,8 @@ export const EditClientForm: React.FC<EditClientFormProps> = ({ client, onSave, 
       <div className="pt-2">
         <label className="block text-sm font-medium text-gray-300 mb-2">Indicadores de Riesgo</label>
         <div className="space-y-2">
-            {ALL_FLAGS.map(flag => (
-                <label key={flag} className="flex items-center space-x-3 text-gray-300">
+            {ALL_FLAGS.map((flag, index) => (
+                <label key={`edit-flag-${index}-${flag}`} className="flex items-center space-x-3 text-gray-300">
                     <input
                         type="checkbox"
                         value={flag}

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Client, HistoricEntry } from '../types';
-import { UserIcon, IdIcon, CalendarIcon, LocationIcon, PhoneIcon, EmailIcon, PencilIcon, FlagIcon, ClockIcon } from './Icons';
+import { CalendarIcon, ClockIcon, EmailIcon, FlagIcon, IdIcon, LocationIcon, PencilIcon, PhoneIcon, UserIcon } from './Icons';
 
 interface ClientInfoCardProps {
   client: Client;
@@ -68,8 +68,8 @@ export const ClientInfoCard: React.FC<ClientInfoCardProps> = ({ client, onEdit, 
         <div className="mt-4 pt-4 border-t border-gray-700">
             <h4 className="text-sm font-semibold text-white mb-2 flex items-center"><FlagIcon className="h-4 w-4 mr-2 text-red-400"/>Indicadores de Riesgo</h4>
             <div className="flex flex-wrap gap-2">
-                {client.flags.map(flag => (
-                    <span key={flag} className="px-2 py-1 text-xs font-semibold rounded-full bg-red-900/70 text-red-300">
+                {client.flags.map((flag, index) => (
+                    <span key={`${client.id}-${flag}-${index}`} className="px-2 py-1 text-xs font-semibold rounded-full bg-red-900/70 text-red-300">
                         {flag}
                     </span>
                 ))}

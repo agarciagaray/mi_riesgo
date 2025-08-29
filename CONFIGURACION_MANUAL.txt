@@ -1,0 +1,78 @@
+========================================
+MIRIESGO v2 - Configuración Manual MySQL/MariaDB
+========================================
+
+PASO 1: Conectarse a la base de datos
+--------------------------------------
+Abrir una nueva ventana de Command Prompt y ejecutar:
+
+mysql -u [TU_USUARIO] -p
+
+(Reemplaza [TU_USUARIO] con tu usuario de MySQL, probablemente 'root' o el que uses)
+Cuando pida la contraseña, ingresa tu contraseña de MySQL.
+
+
+PASO 2: Crear la base de datos
+-------------------------------
+Una vez conectado a MySQL, ejecutar estos comandos:
+
+CREATE DATABASE IF NOT EXISTS miriesgo_v2 CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE miriesgo_v2;
+SHOW DATABASES;
+
+(Deberías ver 'miriesgo_v2' en la lista)
+
+
+PASO 3: Salir de MySQL temporalmente
+------------------------------------
+exit;
+
+
+PASO 4: Ejecutar el script de tablas
+------------------------------------
+Desde Command Prompt (NO PowerShell), ejecutar:
+
+mysql -u [TU_USUARIO] -p miriesgo_v2 < database/schema.sql
+
+(Reemplaza [TU_USUARIO] con tu usuario de MySQL)
+
+
+PASO 5: Verificar que las tablas se crearon
+-------------------------------------------
+Conectarse nuevamente:
+
+mysql -u [TU_USUARIO] -p miriesgo_v2
+
+Y ejecutar:
+
+SHOW TABLES;
+
+Deberías ver las siguientes tablas:
+- audit_logs
+- companies  
+- clients
+- credit_reports
+- file_uploads
+- loans
+- sessions
+- users
+
+
+PASO 6: Configurar archivo .env
+-------------------------------
+Editar el archivo .env en la raíz del proyecto con tus credenciales:
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=miriesgo_v2
+DB_USER=[TU_USUARIO]
+DB_PASSWORD=[TU_CONTRASEÑA]
+
+
+PASO 7: Ejecutar migración de datos
+-----------------------------------
+cd database
+python migrate_data.py
+
+
+¿Necesitas ayuda con algún paso específico?

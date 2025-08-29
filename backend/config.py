@@ -29,5 +29,10 @@ class Settings(BaseSettings):
 
 # Validación de variables obligatorias
 settings = Settings()
-if not all([settings.DB_USER, settings.DB_PASSWORD, settings.API_KEY]):
-    raise ValueError("Faltan variables de entorno obligatorias. Por favor revisa tu archivo .env")
+# Comentamos temporalmente la validación para desarrollo
+# if not all([settings.DB_USER, settings.DB_PASSWORD, settings.API_KEY]):
+#     raise ValueError("Faltan variables de entorno obligatorias. Por favor revisa tu archivo .env")
+
+# Para desarrollo con SQLite, solo validamos la API_KEY si se va a usar
+if settings.API_KEY and "TU_CLAVE_DE_GEMINI_AQUI" in settings.API_KEY:
+    print("⚠️  ADVERTENCIA: Usando API Key de placeholder. Configura una real para usar IA.")
