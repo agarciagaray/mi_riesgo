@@ -37,9 +37,8 @@ if DB_PASSWORD:
     DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4&ssl_disabled=True"
 else:
     DATABASE_URL = f"mysql+pymysql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4&ssl_disabled=True"
-
-# Probar conexión MySQL
-try:
+    
+    # Probar conexión MySQL
     test_engine = create_engine(
         DATABASE_URL,
         connect_args={

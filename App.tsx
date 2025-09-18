@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Footer } from './components/Footer';
 import { MenuIcon, SpinnerIcon } from './components/Icons';
 import { Navigation } from './components/Navigation';
+import { ThemeProvider } from './components/theme-provider';
 import { useAuth } from './contexts/AuthContext';
 import { AdminPage } from './pages/AdminPage';
 import { ClientManagementPage } from './pages/ClientManagementPage';
@@ -43,7 +44,7 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-900 text-gray-200 min-h-screen font-sans">
+    <div className="bg-background text-foreground min-h-screen font-sans transition-colors">
       <Navigation
         currentPage={currentPage.page}
         onNavigate={(page) => {
@@ -58,10 +59,10 @@ const MainLayout: React.FC = () => {
         onLogout={logout}
       />
       <div className={`transition-all duration-300 ${isNavCollapsed ? 'ml-20' : 'ml-72'}`}>
-        <header className="flex items-center justify-between p-4 border-b border-gray-800 md:hidden">
-          <span className="font-semibold text-white">{user?.fullName}</span>
+        <header className="flex items-center justify-between p-4 border-b border-border md:hidden">
+          <span className="font-semibold text-foreground">{user?.fullName}</span>
           <button
-            className="p-2 rounded-md text-gray-400 hover:bg-gray-700"
+            className="p-2 rounded-md text-muted-foreground hover:bg-accent"
             onClick={() => setIsNavOpen(true)}
             aria-label="Open navigation"
           >
@@ -80,9 +81,9 @@ const MainLayout: React.FC = () => {
 };
 
 const SplashScreen: React.FC = () => (
-  <div className="bg-gray-900 text-gray-200 min-h-screen flex flex-col items-center justify-center">
-    <SpinnerIcon className="h-16 w-16 text-cyan-400" />
-    <p className="mt-4 text-lg text-gray-400">Cargando Plataforma...</p>
+  <div className="bg-background text-foreground min-h-screen flex flex-col items-center justify-center transition-colors">
+    <SpinnerIcon className="h-16 w-16 text-primary" />
+    <p className="mt-4 text-lg text-muted-foreground">Cargando Plataforma...</p>
   </div>
 );
 
@@ -92,14 +93,26 @@ export default function App() {
   const [view, setView] = useState<'login' | 'register'>('login');
 
   if (isLoading) {
-    return <SplashScreen />;
+    return (
+      <ThemeProvider defaultTheme="dark" storageKey="miriesgo-ui-theme">
+        <SplashScreen />
+      </ThemeProvider>
+    );
   }
 
   if (isAuthenticated) {
-    return <MainLayout />;
+    return (
+      <ThemeProvider defaultTheme="dark" storageKey="miriesgo-ui-theme">
+        <MainLayout />
+      </ThemeProvider>
+    );
   }
 
-  return view === 'login'
-    ? <LoginPage onSwitchToRegister={() => setView('register')} />
-    : <RegisterPage onSwitchToLogin={() => setView('login')} />;
+  return (
+    <ThemeProvider defaultTheme="dark" storageKey="miriesgo-ui-theme">
+      {view === 'login'
+        ? <LoginPage onSwitchToRegister={() => setView('register')} />
+        : <RegisterPage onSwitchToLogin={() => setView('login')} />}
+    </ThemeProvider>
+  );
 }

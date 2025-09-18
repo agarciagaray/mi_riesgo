@@ -1,6 +1,7 @@
 import React from 'react';
 import type { User } from '../types';
 import { CogIcon, DocumentSearchIcon, LogoIcon, LogoutIcon, MenuIcon, PresentationChartBarIcon, UserGroupIcon, UserIcon, XMarkIcon } from './Icons';
+import { ThemeToggle } from './theme-toggle';
 
 type NavItemProps = {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
@@ -19,8 +20,8 @@ const NavItem: React.FC<NavItemProps> = ({ icon: Icon, label, isActive, onClick,
         onClick();
       }}
       className={`flex items-center p-3 rounded-lg transition-colors duration-200 group relative ${isActive
-        ? 'bg-cyan-500/20 text-cyan-300'
-        : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+        ? 'bg-primary/20 text-primary'
+        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
         }`}
       title={isCollapsed ? label : undefined}
     >
@@ -29,7 +30,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon: Icon, label, isActive, onClick,
 
       {/* Tooltip para modo colapsado */}
       {isCollapsed && (
-        <div className="absolute left-full ml-2 px-2 py-1 bg-gray-700 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+        <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none border">
           {label}
         </div>
       )}
@@ -83,7 +84,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
       {/* Sidebar */}
       <aside className={`
-        fixed top-0 left-0 h-full z-40 bg-gray-800 border-r border-gray-700
+        fixed top-0 left-0 h-full z-40 bg-card border-r border-border
         w-72 ${isCollapsed ? 'w-20' : 'w-72'}
         transition-all duration-300 ease-in-out
         translate-x-0 shadow-xl
@@ -92,9 +93,9 @@ export const Navigation: React.FC<NavigationProps> = ({
           <div>
             <div className="flex items-center justify-between p-2 mb-6">
               <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
-                <LogoIcon className="h-10 w-10 text-cyan-400 flex-shrink-0" />
+                <LogoIcon className="h-10 w-10 text-primary flex-shrink-0" />
                 {!isCollapsed && (
-                  <h1 className="text-xl font-bold text-white tracking-tight">
+                  <h1 className="text-xl font-bold text-foreground tracking-tight">
                     Gestion de Historial Crediticio
                   </h1>
                 )}
@@ -102,7 +103,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
               {/* Botón para colapsar en desktop */}
               <button
-                className="hidden md:block text-gray-500 hover:text-white transition-colors"
+                className="hidden md:block text-muted-foreground hover:text-foreground transition-colors"
                 onClick={() => setIsCollapsed(!isCollapsed)}
                 aria-label={isCollapsed ? "Expandir menú" : "Colapsar menú"}
               >
@@ -111,7 +112,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
               {/* Botón para cerrar en mobile */}
               <button
-                className="md:hidden text-gray-500 hover:text-white"
+                className="md:hidden text-muted-foreground hover:text-foreground"
                 onClick={() => setIsOpen(false)}
                 aria-label="Cerrar menú de navegación"
               >
@@ -134,14 +135,19 @@ export const Navigation: React.FC<NavigationProps> = ({
             </nav>
           </div>
           <div className="mt-4">
+            {/* Toggle de tema */}
+            <div className={`mb-4 ${isCollapsed ? 'flex justify-center' : ''}`}>
+              <ThemeToggle />
+            </div>
+            
             {user && (
-              <div className={`bg-gray-900/50 rounded-lg mb-2 transition-all duration-300 ${isCollapsed ? 'p-2' : 'p-3'}`}>
+              <div className={`bg-muted/50 rounded-lg mb-2 transition-all duration-300 ${isCollapsed ? 'p-2' : 'p-3'}`}>
                 <div className={`flex items-center ${isCollapsed ? 'justify-center' : ''}`}>
-                  <UserIcon className={`text-gray-400 bg-gray-700 rounded-full ${isCollapsed ? 'h-8 w-8 p-1.5' : 'h-10 w-10 mr-3 p-2'}`} />
+                  <UserIcon className={`text-muted-foreground bg-muted rounded-full ${isCollapsed ? 'h-8 w-8 p-1.5' : 'h-10 w-10 mr-3 p-2'}`} />
                   {!isCollapsed && (
                     <div>
-                      <p className="font-semibold text-white text-sm">{user.fullName}</p>
-                      <p className="text-xs text-gray-400">{roleMap[user.role]}</p>
+                      <p className="font-semibold text-foreground text-sm">{user.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{roleMap[user.role]}</p>
                     </div>
                   )}
                 </div>
@@ -149,7 +155,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             )}
             <button
               onClick={onLogout}
-              className={`w-full flex items-center rounded-lg transition-colors duration-200 text-gray-400 hover:bg-red-500/20 hover:text-red-300 ${isCollapsed ? 'p-2 justify-center' : 'p-3'
+              className={`w-full flex items-center rounded-lg transition-colors duration-200 text-muted-foreground hover:bg-destructive/20 hover:text-destructive ${isCollapsed ? 'p-2 justify-center' : 'p-3'
                 }`}
               title={isCollapsed ? "Cerrar Sesión" : undefined}
             >

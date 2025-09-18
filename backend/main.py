@@ -17,8 +17,7 @@ if not os.path.exists('uploads'):
 
 print("🚀 Iniciando MIRIESGO v2 Backend...")
 print("="*50)
-print("⚠️ Usando modo de desarrollo con datos mock")
-print("📊 Para configurar MySQL, revise la documentación")
+print("📊 Conectando a base de datos MariaDB")
 print("="*50)
 
 # ===============================================
@@ -113,7 +112,7 @@ async def health_check():
     """Endpoint para verificar que el servidor está funcionando"""
     return {
         "status": "healthy",
-        "database": "mock_mode",
+        "database": "MariaDB_mode",
         "version": "2.0.0",
         "message": "MIRIESGO v2 Backend funcionando en modo de desarrollo"
     }
@@ -125,7 +124,7 @@ async def system_info():
         "application": "MIRIESGO v2",
         "version": "2.0.0",
         "mode": "development",
-        "database": "Mock data (MySQL not configured)",
+        "database": "MariaDB configured and connected",
         "features": [
             "Consultas crediticias",
             "Análisis de riesgo con IA",

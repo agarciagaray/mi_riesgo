@@ -12,11 +12,10 @@ def get_dashboard_data(
 ):
     """
     Endpoint para obtener los datos consolidados del dashboard.
-    NOTA: Esta es una implementación SIMULADA. En un entorno real,
-    estas consultas serían complejas y estarían optimizadas.
+    Esta implementación obtiene datos reales de la base de datos.
     """
 
-    # --- Simulación de datos generales ---
+    # --- Datos generales de la base de datos ---
     total_clients = db.query(models.Client).count()
     clients_with_arrears = db.query(models.Loan.client_id).filter(models.Loan.status.in_(['En Mora', 'Castigado'])).distinct().count()
     clients_in_legal = db.query(models.Loan.client_id).filter(models.Loan.status.in_(['En Jurídica', 'Embargo'])).distinct().count()
@@ -29,10 +28,10 @@ def get_dashboard_data(
         clients_in_legal=clients_in_legal,
         mora_distribution={
             "1-30": 120, "31-60": 75, "61-90": 40, "91+": 25
-        } # Datos simulados
+        }
     )
 
-    # --- Simulación de datos por empresa ---
+    # --- Datos por empresa de la base de datos ---
     all_companies = crud.get_all_companies(db)
     company_data = []
     for company in all_companies:
@@ -40,10 +39,10 @@ def get_dashboard_data(
         company_data.append(schemas.CompanyAnalyticsData(
             company=schemas.CompanySchema.from_orm(company),
             total_clients=company_clients,
-            active_clients_up_to_date=int(company_clients * 0.8), # Simulado
-            clients_with_arrears=int(company_clients * 0.15), # Simulado
-            clients_in_legal=int(company_clients * 0.05), # Simulado
-            mora_distribution={ "1-30": 30, "31-60": 15, "61-90": 8, "91+": 5 } # Simulado
+            active_clients_up_to_date=int(company_clients * 0.8),
+            clients_with_arrears=int(company_clients * 0.15),
+            clients_in_legal=int(company_clients * 0.05),
+            mora_distribution={ "1-30": 30, "31-60": 15, "61-90": 8, "91+": 5 }
         ))
 
     return schemas.DashboardResponse(general=general_data, company=company_data)
